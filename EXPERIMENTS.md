@@ -23,21 +23,102 @@ However, to conduct various experiments the bottom of the code configuration wil
 }
 ```
 
-# What makes a line a line
-
 
 
 # Color Thresholding in ALINA
 
-By default ALINA does not offer any way to detect anything other than the yellow lines within its program. In order to do this we must change a few processes to allow yellow and white line detection. 
+By default ALINA does not offer any way to detect anything other than the yellow lines within its program. In order to do this we must change a few processes to allow yellow and white line detection. First we must change the `PipelineConfig` dataclass to redefine the type-hinting from a static tuple that accepts three values (h,s,v) in two a dynamic 2D-array of size [N, 3] where N is the number of thresholds to pass and 3 denoting the values h, s, v. 
+
+The result of that update is:
+```python
+    yellow_lower: np.ndarray = field(
+        default_factory=lambda: np.array([[0, 70, 170]], dtype=np.int32)
+    )
+    yellow_upper: np.ndarray = field(
+        default_factory=lambda: np.array([[255,255,255]], dtype=np.int32)
+    )
+```
+
+Note: we do not change the naming scheme here instead hijack the variable for time constrains. This variable should be updated to `color_thresholds_lower` and `color_thresholds_upper` but that requires a more deep dive tear down within ALINA to refactor. 
+
+As pointed out in the assignment 4 debrief the function `normalize_color_features` does not correctly normalize the Hue component of HSV color space in CSV. Therefore, we corect it so that it conforms to the HSV OpenCV color space such that hue is constrained to [0, 179]. 
+
+From there inside of the process image function we must update the process to generate a mask for each threshold which can be done via a simple for loop over each of the lower and upper pairs. 
+
+```python
+    mask = []
+    for lower, upper in zip(lowers, uppers):
+        _mask = cv2.inRange(color_features, lower, upper)
+        if config.mask_ignore_left_columns > 0:
+            _mask[:, :config.mask_ignore_left_columns] = 0
+
+        mask.append(_mask)
+```
+
+In the case of this assignment mask will now be a 3D arary of shape [T, w, h] where T is the number of thresholds passed and the image width (w) and height (h). For this case T is constrianed to 2 since we only pass in a threshold for yellow and white. 
+
+To prevent unessissary computation we merge the masks back together via a binary OR operation. This operation was selected becasue the CIRCLEDAT process does not care about color or type of pixels, rather only the intentisty of them and how many of them there are. So the reuslting mask that CIRCLEDAT cares about is a mask where high pixels belong to any threshold. 
+
+Note: This could be changed so the process returns two seperated independent values for different line colors. However the way the ALINA process is built is a mentality that "a line is a line regardless of color". In a real application for intelligent aircraft mobility, the line colors do carry semantic meaning and should be segemented out approriately. While, that could be done for this assignmnet it would require significant overhaul of ALINA and generating a new EVAL pipeline to produce segemented labels for metric verification. 
+
+Note: Inside of the process_image the calcualtion for the historgarm (`calc_histogram` function) consumes a variable from the configuration called `min_white_pixels`. However this variable name is a misnomer and should be changed. The histogram is not consuming pixels of any color, instead the image it consumes is a binary image mask with high/low pixels. Recommend to refactor to `min_mask_pixels` to keep the program readable. 
 
 
-# Assignment 5 Debrief
+# Data considerations
+
+There is a signficiant lack of data to do color thresholding on both yellow and/or white lines. 
 
 Only 20 images within all of ALINA actually contain both white or yellow lines (note: use of OR is CS based or that it can be yellow, white or both at the same time). 
 Those 20 images are images `00001.jpg` - `00020.jpg` in the `vidd_1` videoset. Therefore, there is not enough data for any meaningful process to take place. The lack of data results in highly specific models that work only on this one view at this one part of the runway; no meaning statistics can be derived as the sample size is not large or varied enough to have any form of train/test/validation or any direvitive of data spliting for metrics (i.e. k-fold cross validation). 
 
-Most of the assignmnet does not really require an ML approach to solve the problem. Leveraging the governments offical color code that is required by all FAA goverened airports can solve majority of the problem. Additionally, because the lines are so well defined such that they have a black border around them during day light running the problem actually becomes "identify all black 
+Additionally, the camera is not defined within the ALINA paper itself. Therefore no camera adjustments or assumptions can be made about its color response. Further more, the camera(s) themselves were not color calibrated via an industry standard (such as the Calibrite Color Checker). Without the true color response of the camera there is no objective way to reduce the problem into a simple computer vision based task or provide insight into simplisitic models for color identification. 
+
+
+As for the color(s) themselves the assignment describes them as high abstract concepts "yellow" and "white". However, FAA governed airports are strictly controlled areas and therefore every color has an offical governmnet assignment. 
+
+For our case we only care about two of them the offical yellow and white.
+It took a while to find the offical government document that outlines these requirements as most of them allude to a "reference" document however that document is `Item P-620 Runway and Taxiway Markings` [Source](https://sightline.us/images/pdf/FAAAC_150-5370-10HP620.pdf)
+
+Within this document there is an unlabled tabled that lists all the colors and the offical Fed Standard No. 595 Color Number. This table is reproduced below:
+
+| Paint Color | Fed Std. No. 595 Color Number |
+| :--- | ---: |
+| White | 37925 |
+| Red | 31136 |
+| Yellow | 33538 or 33655 |
+| Black | 37038 |
+| Pink | 1 part 31136 to 2 parts 37925 |
+| Green | 34108 |
+
+From here we can define the target colors as the Color number 33538 or 33655 for yellow and 37925 for white. These end up being RGB values of [244, 159, 33], [247, 173, 16], and [239, 241, 230] respectively. 
+
+Because of the lack of data there is an exploit to make the problem simpler. Under the table in the document above is a key statement about the standardization of the color implementation that reads:
+```
+Waterborne or solvent base black paint should be used to outline a border at least 6 inches (150 mm) wide around markings on all light-colored pavements. Performed thermoplastic markings shall have a non-reflectorized black border integral to the marking.
+```
+
+Because the airport used for the data provided is considered "light-colored pavement" we can solve the any color line problem by simply identifying the black borders around any line marking within the ROI. The only consideration to have is that the propeller of the aircraft is nearly identidical to that of the black border. However, that is where the width measurments come into play. In an reprojected space the propeller would be much larger than the 150mm since we would effectively be looking for a sequence of B*B where B is the color black the wildcard * denoting any color then another Black. Then using the size of the wildcard we can infer the size of the black border and determine if it is within the theortical sizing threshold. 
+
+
+# Experiments
+
+
+## KMeans Unsupervised
+
+The inital concept for application of dynamic color thresholding is a K-Means unsuprivised learning. The reason that this works unlike in assignment 4 for horizon detection is the fact that we have a known ground truth "probe" color. In this case it is the Fed standard yellow and white colors. 
+
+By taking every pixel's RGB value and clustering them by likeness we can find the cluster of pixels closest to each of the probe colors. The boundary of the cluster define the thresholding for that color. However, to prevent a pure black or white washout we take the 5th to 95th percintile boundary so the resulting cluster is in real color space (i.e. returns colors that we actually care about). 
+This method was selected over taking the mean cluster value and adding +/- the standard deviation to get the threshold because the problem could then effecitvely be solved by taking the probe color and applying a defined standard deviation to it to get the approximate threshold. Therefore, the precentile based system still leverages a more ML based approach than the naive application approach. 
+
+## Hyperspectral Imaging
+
+
+
+
+
+
+# Assignment 5 Debrief
+
 
 
 
