@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-
+import numpy as np
 
 @dataclass
 class ROIConfig:
@@ -24,8 +24,12 @@ class PipelineConfig:
     min_white_pixels: int = 200
     circular_threshold: int = 15
 
-    yellow_lower: tuple[int, int, int] = (0, 70, 170)
-    yellow_upper: tuple[int, int, int] = (255, 255, 255)
+    yellow_lower: np.ndarray = field(
+        default_factory=lambda: np.array([[0, 70, 170]], dtype=np.int32)
+    )
+    yellow_upper: np.ndarray = field(
+        default_factory=lambda: np.array([[255,255,255]], dtype=np.int32)
+    )
 
     # zero out mask columns 0..mask_ignore_left_columns before traversal
     mask_ignore_left_columns: int = 300

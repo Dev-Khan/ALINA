@@ -1,4 +1,51 @@
-# Running experiments
+# Assignment 5
+
+## Running experiments
+
+All code required is within the `assignment5` folder. The only command to run the pipeline needed is the following:
+```python a5.py```
+
+However, to conduct various experiments the bottom of the code configuration will need to be updated by the user. This could have been command line arguments, but for rapid prototyping on the assignmnet timeline it is manual configurations. 
+
+```    args = {
+        "input_dir": "./../data/Raw_Data/vidd_3",
+        "output_images_dir": "./../outputs/tmp/annotated",
+        "output_coords_dir": "./../outputs/tmp/coords", 
+        "log_file": "./../outputs/tmp/timing.log",
+        "peak_threshold": 5,
+        "min_white_pixels": 20,
+        "circular_threshold": 15,
+        "yellow_lower": [0, 70, 170], # HSV
+        "yellow_upper": [255, 255, 255], # HSV
+        "mask_ignore_left_columns": 300,
+        "custom_roi": "claude", # We only do the cluade version in a5
+        "custom_thresh": "kmeans" # This controls the algorithms for color thresholding detection
+}
+```
+
+# What makes a line a line
+
+
+
+# Color Thresholding in ALINA
+
+By default ALINA does not offer any way to detect anything other than the yellow lines within its program. In order to do this we must change a few processes to allow yellow and white line detection. 
+
+
+# Assignment 5 Debrief
+
+Only 20 images within all of ALINA actually contain both white or yellow lines (note: use of OR is CS based or that it can be yellow, white or both at the same time). 
+Those 20 images are images `00001.jpg` - `00020.jpg` in the `vidd_1` videoset. Therefore, there is not enough data for any meaningful process to take place. The lack of data results in highly specific models that work only on this one view at this one part of the runway; no meaning statistics can be derived as the sample size is not large or varied enough to have any form of train/test/validation or any direvitive of data spliting for metrics (i.e. k-fold cross validation). 
+
+Most of the assignmnet does not really require an ML approach to solve the problem. Leveraging the governments offical color code that is required by all FAA goverened airports can solve majority of the problem. Additionally, because the lines are so well defined such that they have a black border around them during day light running the problem actually becomes "identify all black 
+
+
+
+# Assignment 4
+
+Everything below here is exactly the same as was submitted for assignment 4. No new information can stop here for grading purposes.
+
+## Running experiments
 
 All code required is within the `assignment4` folder. The only command to run the pipeline needed is the following:
 ```python a4.py```

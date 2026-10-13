@@ -1,0 +1,12 @@
+# ignore the models since they are too big for github
+
+*.pt
+*.keras
+
+.alina/
+
+outputs/
+assignment4/road_lane_cache_dir/
+assignment4/segnet_road_cache_dir/
+assignment4/yolo_road_cahce_dir/
+assignment4/ClaudeAttempt/
