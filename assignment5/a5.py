@@ -131,8 +131,9 @@ def process_image(img: np.ndarray, roi_points: np.ndarray, config: PipelineConfi
             cv2.imwrite(str(save_path), color_features)
 
         return color_features
+    
+    color_features = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
     color_features = normalize_color_features(warped)
-    #color_features = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
 
     # 3.5 HSV-based color thresholding -> binary mask of candidate line pixels
     lowers = np.array(config.yellow_lower)
@@ -325,7 +326,7 @@ def hsi_color_threshold(path, target_color):
     [ 49,  49,  51]
     ])
 
-    print(R.shape, C.shape)
+    #print(R.shape, C.shape)
 
     # Compute M
     M = np.linalg.pinv(C) @ R
@@ -344,29 +345,99 @@ def hsi_color_threshold(path, target_color):
 
     hsi_cube = hsi_pixels.reshape(H, W, 36) # we get 31 wavelenghts out of the conversion
 
-    hsi_cube = np.clip(hsi_cube, 0.0, 1.0) # clip so we get real refletance values
+    #hsi_cube = np.clip(hsi_cube, 0.0, 1.0) # clip so we get real refletance values
 
-    fig, ax = plt.subplots(6,6,sharex=True, sharey=True)
+
 
     wvln = [380 + x for x in range(0, 360, 10)] # [380,730] nm range
-    print(wvln, len(wvln))
-    print(hsi_cube.shape)
+    #print(wvln, len(wvln))
+    #print(hsi_cube.shape)
+
+    # HSI Plot
+    if False:
+        fig, ax = plt.subplots(6,6,sharex=True, sharey=True)
+        for i in range(0, 6):
+            for j in range(0, 6):
+
+                idx = i * 6 + j
+
+                if idx >= len(wvln):
+                    continue
+                else:
+                    ax[i, j].imshow(hsi_cube[..., idx], cmap="gray")
+                    ax[i,j].set_title(f"{wvln[idx]} nm")
+
+        plt.show()
+
+    # Get the target color spectra
+    tc_spec = np.asarray(target_color) @ M
 
 
-    for i in range(0, 6):
-        for j in range(0, 6):
+    def cosine_sim(A, B):
+        cs = np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))
+        return np.nanmin([cs, 1])
 
-            idx = i * 6 + j
 
-            if idx >= len(wvln):
-                continue
-            else:
-                ax[i, j].imshow(hsi_cube[..., idx])
-                ax[i,j].set_title(f"{wvln[idx]} nm")
+    # Cosine Plotting
+    if False:
+        fig, ax = plt.subplots(3, 1)
+        pbar = tqdm(total=(H//10)*(W//10))
+        i = 0
+        for h in range(0, H, 10):
+            for w in range(0, W, 10):
+                ax[1].plot(hsi_cube[h, w])
 
-    plt.show()
+                ax[2].scatter(i, cosine_sim(tc_spec, hsi_cube[h, w]))
 
-    assert True == False
+                pbar.update(1)
+        pbar.close()
+        ax[1].set_title("Image Pixel Spectras")
+        ax[2].set_title("Cosine sim between target color and image pixel")
+        ax[0].plot(tc_spec)
+        ax[0].set_title("Target Color Spectra")
+
+
+        plt.show()
+
+
+    K = 10
+    pbar = tqdm(total=(H//K)*(W//K))
+    sim = []
+    i = 0
+    for h in range(0, H, K):
+        _w = []
+        for w in range(0, W, K):
+            _w.append(cosine_sim(tc_spec, hsi_cube[h, w]))
+            pbar.update(1)
+        sim.append(_w)
+
+    pbar.close()
+
+
+    print(np.mean(sim), np.std(sim))
+
+    # Get the min and max based on the min and max pixel values for those pixels within the range of mean+/- std
+    # Can't do anything else fancy since there isnt really enough data and the other option is clustering and that is kinda been done
+
+    pthresh = np.mean(sim) + np.std(sim)
+    nthresh = np.mean(sim) - np.std(sim)
+
+    idx = np.where((nthresh <= sim) & (sim <= pthresh))
+    Y, X = idx[0], idx[1]
+    Y *= K
+    X *= K
+
+    # return the min and max for that range
+
+    # WARNING THIS DATA IS NORMALIZED
+    img = img * 255
+    cluster = img[Y, X, :]
+    min_value = np.percentile(cluster, 5, axis=0).astype(np.uint8)
+    max_value = np.percentile(cluster, 95, axis=0).astype(np.uint8)
+
+    return min_value, max_value
+    
+
 
 
 
@@ -425,7 +496,7 @@ def label_piepeline(args, custom_roi=True, custom_thresh=False):
                     img_roi = roi_via_claude(path, False) # Don't plot the BBox because that was a4 not needed here
 
             rois.append(img_roi)
-            print(img_roi)
+            #print(img_roi)
     else:
         # Yoinked from the cli.py
         reference_image = sorted(config.input_dir.glob("*.jpg"))[0]
@@ -459,6 +530,11 @@ def label_piepeline(args, custom_roi=True, custom_thresh=False):
             if args["custom_thresh"] == "hsi":
                     yl, yu = hsi_color_threshold(path, YELLOW_RGB)
                     wl, wu = hsi_color_threshold(path, WHITE_RGB)
+
+                    yls.append(yl)
+                    yus.append(yu)
+                    wls.append(wl)
+                    wus.append(wu)
 
         # Have to average because the pipeline only accepts a single threshold
         # realistically the entire ALINA pipeline needs to be broken at this point
@@ -514,8 +590,12 @@ def label_piepeline(args, custom_roi=True, custom_thresh=False):
 
         config.yellow_lower = [yl, wl]
         config.yellow_upper = [yu, wu]
+    else:
+        config.yellow_lower = [config.yellow_lower[0][0], config.yellow_lower[0][1]]
+        config.yellow_upper = [config.yellow_upper[0][0], config.yellow_upper[0][1]]
 
     print(config)
+
 
     # run the batch (bad because it doesnt do ROI per image)
     #run_batch(config, rois)
@@ -533,11 +613,11 @@ if __name__ == "__main__":
         "peak_threshold": 5,
         "min_white_pixels": 20,
         "circular_threshold": 15,
-        "yellow_lower": [0, 70, 170], # HSV
-        "yellow_upper": [255, 255, 255], # HSV
+        "yellow_lower": [(0, 70, 170), (125,125,125)], # HSV
+        "yellow_upper": [(255, 255, 255), (255,255,255)], # HSV
         "mask_ignore_left_columns": 300,
         "custom_roi": "claude", # unet, segnet, segformer, kmeans, claude (None, if manual ALINA pipeline)
         "custom_thresh": "hsi" # kmeans, hsi, etc
     }
 
-    label_piepeline(args, custom_roi=False, custom_thresh=True)
+    label_piepeline(args, custom_roi=False, custom_thresh=False)

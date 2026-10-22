@@ -1,9 +1,18 @@
 
-# Assignment 4 -- Connor Westcott
+# Assignment 5 -- Connor Westcott
 
 This readme is stuctured as following
-- First part is the contents found in EXPERIMENTS.md which is a report on how to run the code experiments and the results and discussions as requested in the homework assignment
-- Second part is the original readme of the forked github
+- First part is the contents found in EXPERIMENTS.md which is a report on how to run the code experiments and the results and discussions as requested in the homework assignment 5. 
+- second part is the assignemnt 4 EXPERIMENTS.md which is left unchanged from that assignment and is there for continiutiy. 
+- third part is the original readme of the forked github
+  
+
+
+
+
+
+
+# Assignment 4 -- Connor Westcott
 
 # Running experiments
 
